@@ -69,20 +69,21 @@ if st.button("🚀 Start simulatie"):
     output = io.StringIO()
     env = simpy.Environment()
 
-    sim_resources = {naam: simpy.Resource(env, capacity=1000) for naam in resource_info}
+    sim_resources = {stap["naam"]: simpy.Resource(env, capacity=stap["capaciteit"]) for stap in stappen_config}
     stap_stats = {s["naam"]: {"verwerkingstijd": 0, "aantal": 0, "kosten": 0, "resource": s["resource"], "eenheden": 0} for s in stappen_config}
     resource_usage = {naam: 0 for naam in resource_info}
 
     def processtap(env, stap, eenheden):
-        resource = sim_resources[stap["resource"]]
-        beschikbaarheid = resource_info[stap["resource"]]["beschikbaar"]
+        resource = sim_resources[stap["naam"]]
+        resource_naam = stap["resource"]
+        beschikbaarheid = resource_info[resource_naam]["beschikbaar"]
         succesvol_verwerkt = 0
         sets = math.ceil(eenheden / stap["capaciteit"])
 
         for i in range(sets):
             duur = stap["tijd"]
-            if resource_usage[stap["resource"]] + duur > beschikbaarheid:
-                output.write(f"{seconds_to_hms_str(env.now)}: ⛔ Resource {stap['resource']} heeft onvoldoende capaciteit voor {stap['naam']} (set {i+1})\n")
+            if resource_usage[resource_naam] + duur > beschikbaarheid:
+                output.write(f"{seconds_to_hms_str(env.now)}: ⛔ Resource {resource_naam} heeft onvoldoende capaciteit voor {stap['naam']} (set {i+1})\n")
                 continue
             with resource.request() as req:
                 res = env.process(req)
@@ -90,7 +91,7 @@ if st.button("🚀 Start simulatie"):
                 output.write(f"{seconds_to_hms_str(env.now)}: Start {stap['naam']} (set {i+1})\n")
                 yield env.timeout(duur)
                 output.write(f"{seconds_to_hms_str(env.now)}: Einde {stap['naam']} (set {i+1})\n")
-                resource_usage[stap["resource"]] += duur
+                resource_usage[resource_naam] += duur
                 stap_stats[stap["naam"]]["verwerkingstijd"] += duur
                 stap_stats[stap["naam"]]["aantal"] += 1
                 items_in_set = min(stap["capaciteit"], eenheden - succesvol_verwerkt)
