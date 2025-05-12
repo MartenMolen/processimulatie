@@ -76,9 +76,8 @@ if st.button("🚀 Start simulatie"):
     def processtap(env, stap, eenheden):
         resource = sim_resources[stap["resource"]]
         beschikbaarheid = resource_info[stap["resource"]]["beschikbaar"]
-        tijdsgebruik = 0
-        sets = math.ceil(eenheden / stap["capaciteit"])
         succesvol_verwerkt = 0
+        sets = math.ceil(eenheden / stap["capaciteit"])
 
         for i in range(sets):
             duur = stap["tijd"]
@@ -90,20 +89,28 @@ if st.button("🚀 Start simulatie"):
                 output.write(f"{seconds_to_hms_str(env.now)}: Start {stap['naam']} (set {i+1})\n")
                 yield env.timeout(duur)
                 output.write(f"{seconds_to_hms_str(env.now)}: Einde {stap['naam']} (set {i+1})\n")
+                resource_usage[stap["resource"]] += duur
                 stap_stats[stap["naam"]]["verwerkingstijd"] += duur
                 stap_stats[stap["naam"]]["aantal"] += 1
-                resource_usage[stap["resource"]] += duur
-                items_in_deze_set = min(stap["capaciteit"], eenheden - succesvol_verwerkt)
-                stap_stats[stap["naam"]]["eenheden"] += items_in_deze_set
-                succesvol_verwerkt += items_in_deze_set
+                items_in_set = min(stap["capaciteit"], eenheden - succesvol_verwerkt)
+                stap_stats[stap["naam"]]["eenheden"] += items_in_set
+                succesvol_verwerkt += items_in_set
 
         return succesvol_verwerkt
 
     def item_flow(env):
-        resterend = aantal_items
-        for stap in stappen_config:
-            verwerkt = yield env.process(processtap(env, stap, resterend))
-            resterend = min(verwerkt, resterend)
+        batch = 1  # verwerk per eenheid voor realistische flow
+        stap_buffers = [aantal_items] + [0] * (len(stappen_config) - 1)
+
+        while any(stap_buffers):
+            for i, stap in enumerate(stappen_config):
+                if stap_buffers[i] <= 0:
+                    continue
+                items = stap_buffers[i]
+                verwerkt = yield env.process(processtap(env, stap, items))
+                stap_buffers[i] -= verwerkt
+                if i + 1 < len(stap_buffers):
+                    stap_buffers[i+1] += verwerkt
 
     env.process(item_flow(env))
     env.run()
