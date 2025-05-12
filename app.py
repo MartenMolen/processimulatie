@@ -70,7 +70,7 @@ if st.button("🚀 Start simulatie"):
     env = simpy.Environment()
 
     sim_resources = {naam: simpy.Resource(env, capacity=1000) for naam in resource_info}
-    stap_stats = {s["naam"]: {"verwerkingstijd": 0, "aantal": 0, "kosten": 0} for s in stappen_config}
+    stap_stats = {s["naam"]: {"verwerkingstijd": 0, "aantal": 0, "kosten": 0, "resource": s["resource"]} for s in stappen_config}
     resource_usage = {naam: 0 for naam in resource_info}
 
     def processtap(env, stap, eenheden):
@@ -101,12 +101,12 @@ if st.button("🚀 Start simulatie"):
     st.success(f"✅ Totale verwerkingstijd: {seconds_to_hms_str(totale_verwerkingstijd)}")
 
     totale_kosten = 0
-    for stap in stappen_config:
-        res = stap["resource"]
-        fractie_gebruik = resource_usage[res] / resource_info[res]["beschikbaar"]
-        kosten = fractie_gebruik * resource_info[res]["kosten"]
-        stap_stats[stap["naam"]]["kosten"] += kosten
-        totale_kosten += kosten
+    for stap_naam, data in stap_stats.items():
+        res = data["resource"]
+        tijd = data["verwerkingstijd"]
+        stap_kosten = (tijd / resource_info[res]["beschikbaar"]) * resource_info[res]["kosten"]
+        data["kosten"] = stap_kosten
+        totale_kosten += stap_kosten
 
     st.info(f"💰 Totale kosten: €{totale_kosten:.2f}")
 
