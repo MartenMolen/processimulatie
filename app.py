@@ -85,7 +85,8 @@ if st.button("🚀 Start simulatie"):
                 output.write(f"{seconds_to_hms_str(env.now)}: ⛔ Resource {stap['resource']} heeft onvoldoende capaciteit voor {stap['naam']} (set {i+1})\n")
                 continue
             with resource.request() as req:
-                yield req
+                res = env.process(req)
+                yield res
                 output.write(f"{seconds_to_hms_str(env.now)}: Start {stap['naam']} (set {i+1})\n")
                 yield env.timeout(duur)
                 output.write(f"{seconds_to_hms_str(env.now)}: Einde {stap['naam']} (set {i+1})\n")
@@ -107,7 +108,8 @@ if st.button("🚀 Start simulatie"):
                 if stap_buffers[i] <= 0:
                     continue
                 items = stap_buffers[i]
-                verwerkt = yield env.process(processtap(env, stap, items))
+                proces = env.process(processtap(env, stap, items))
+                verwerkt = yield proces
                 stap_buffers[i] -= verwerkt
                 if i + 1 < len(stap_buffers):
                     stap_buffers[i+1] += verwerkt
