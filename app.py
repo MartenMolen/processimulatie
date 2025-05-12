@@ -2,10 +2,13 @@ import streamlit as st
 import simpy
 import random
 import io
+import pandas as pd
+import plotly.express as px
 
+st.set_page_config(page_title="Processimulatie", layout="wide")
 st.title("🧪 Dynamische Processimulatie met Streamlit + SimPy")
 
-# Basisinstellingen
+# Instellingen
 aantal_orders = st.slider("Aantal orders", min_value=1, max_value=20, value=5)
 simulatietijd = st.number_input("Totale simulatie tijd (tijdseenheden)", min_value=10, max_value=500, value=100)
 aantal_stappen = st.number_input("Aantal processtappen", min_value=1, max_value=10, value=3)
@@ -34,39 +37,52 @@ for i in range(aantal_stappen):
         "tijd": verwerkingstijd
     })
 
-    # Unieke resources + capaciteit opslaan
     if resource not in resource_config:
         resource_config[resource] = capaciteit
 
 # Startknop
 if st.button("🚀 Start simulatie"):
     output = io.StringIO()
-
-    # SimPy-omgeving en dynamische resources
     env = simpy.Environment()
     resources = {naam: simpy.Resource(env, capacity=cap) for naam, cap in resource_config.items()}
+    resource_usage = {naam: 0 for naam in resource_config.keys()}
 
-    # Procesdefinitie
-    def processtap(env, naam, duur, resource_obj):
+    def processtap(env, naam, duur, resource_obj, resource_naam):
         with resource_obj.request() as req:
             yield req
-            output.write(f"{env.now:.1f}: Start {naam}\n")
+            output.write(f"{env.now:.1f}: Start {naam} ({resource_naam})\n")
             yield env.timeout(duur)
             output.write(f"{env.now:.1f}: Einde {naam}\n")
+            resource_usage[resource_naam] += duur
 
     def order_flow(env, id):
         output.write(f"{env.now:.1f}: Order {id} binnen\n")
         for stap in stappen_config:
-            yield from processtap(env, stap["naam"], stap["tijd"], resources[stap["resource"]])
+            yield from processtap(env, stap["naam"], stap["tijd"], resources[stap["resource"]], stap["resource"])
         output.write(f"{env.now:.1f}: Order {id} klaar\n")
 
-    # Orders inplannen
     for i in range(aantal_orders):
         env.process(order_flow(env, i))
         env.timeout(1)
 
     env.run(until=simulatietijd)
 
-    # Resultaten tonen
     st.subheader("📄 Simulatielog")
-    st.text_area("Uitvoer", output.getvalue(), height=400)
+    st.text_area("Log", output.getvalue(), height=300)
+
+    st.subheader("📊 Samenvatting per resource")
+    df = pd.DataFrame([
+        {
+            "Resource": res,
+            "Verwerkingstijd": tijd,
+            "Bezettingsgraad (%)": round((tijd / simulatietijd) * 100, 2)
+        }
+        for res, tijd in resource_usage.items()
+    ])
+    st.dataframe(df, use_container_width=True)
+
+    st.subheader("📈 Bezettingsgraad per resource")
+    fig = px.bar(df, x="Resource", y="Bezettingsgraad (%)", text="Bezettingsgraad (%)", color="Resource")
+    fig.update_traces(textposition="outside")
+    fig.update_layout(yaxis_range=[0, 100])
+    st.plotly_chart(fig, use_container_width=True)
