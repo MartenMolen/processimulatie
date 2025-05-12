@@ -75,7 +75,7 @@ if st.button("🚀 Start simulatie"):
         {
             "Resource": res,
             "Verwerkingstijd": tijd,
-            "Bezettingsgraad (%)": round((tijd / simulatietijd) * 100, 2)
+            "Bezettingsgraad (%)": round((tijd / simulatietijd * capaciteit) * 100, 2)
         }
         for res, tijd in resource_usage.items()
     ])
