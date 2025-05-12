@@ -97,10 +97,12 @@ if st.button("🚀 Start simulatie"):
                 stap_stats[stap["naam"]]["eenheden"] += items_in_set
                 succesvol_verwerkt += items_in_set
 
-        return succesvol_verwerkt
+        result = env.event()
+        result.succeed(succesvol_verwerkt)
+        return result
 
     def item_flow(env):
-        batch = 1  # verwerk per eenheid voor realistische flow
+        batch = 1
         stap_buffers = [aantal_items] + [0] * (len(stappen_config) - 1)
 
         while any(stap_buffers):
