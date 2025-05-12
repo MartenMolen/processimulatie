@@ -3,55 +3,70 @@ import simpy
 import random
 import io
 
-# Simulatie-instellingen via gebruikersinvoer
-st.title("Processimulatie met SimPy + Streamlit")
+st.title("🧪 Dynamische Processimulatie met Streamlit + SimPy")
 
+# Basisinstellingen
 aantal_orders = st.slider("Aantal orders", min_value=1, max_value=20, value=5)
-kans_productie_a = st.slider("Kans op Productie A (in %)", min_value=0, max_value=100, value=70)
-simulatietijd = st.number_input("Totale simulatie tijd", min_value=10, max_value=500, value=100)
+simulatietijd = st.number_input("Totale simulatie tijd (tijdseenheden)", min_value=10, max_value=500, value=100)
+aantal_stappen = st.number_input("Aantal processtappen", min_value=1, max_value=10, value=3)
 
-# Interne buffer voor log
-output = io.StringIO()
+st.markdown("---")
+st.subheader("🔧 Configuratie van processtappen")
 
-class ProcessResources:
-    def __init__(self, env):
-        self.machine = simpy.Resource(env, capacity=1)
-        self.operator = simpy.Resource(env, capacity=1)
+stappen_config = []
+resource_config = {}
 
-def processtap(env, naam, duur, resource, res_type):
-    with resource.request() as req:
-        yield req
-        output.write(f"{env.now:.1f}: Start {naam} ({res_type})\n")
-        yield env.timeout(duur)
-        output.write(f"{env.now:.1f}: Einde {naam}\n")
+for i in range(aantal_stappen):
+    st.markdown(f"**Stap {i+1}**")
+    kol1, kol2, kol3, kol4 = st.columns(4)
+    with kol1:
+        naam = st.text_input(f"Naam stap {i+1}", value=f"Stap {i+1}", key=f"naam_{i}")
+    with kol2:
+        resource = st.text_input(f"Resource", value="machine", key=f"res_{i}")
+    with kol3:
+        capaciteit = st.number_input("Capaciteit", min_value=1, value=1, key=f"cap_{i}")
+    with kol4:
+        verwerkingstijd = st.number_input("Verwerkingstijd", min_value=1, value=2, key=f"tijd_{i}")
 
-def keuze_gateway():
-    return random.choices(['pad_a', 'pad_b'], weights=[kans_productie_a, 100 - kans_productie_a])[0]
+    stappen_config.append({
+        "naam": naam,
+        "resource": resource,
+        "tijd": verwerkingstijd
+    })
 
-def order_flow(env, resources, id):
-    output.write(f"{env.now:.1f}: Order {id} binnen\n")
-    yield from processtap(env, f"Orderregistratie", 2, resources.operator, "operator")
+    # Unieke resources + capaciteit opslaan
+    if resource not in resource_config:
+        resource_config[resource] = capaciteit
 
-    keuze = keuze_gateway()
-    if keuze == 'pad_a':
-        yield from processtap(env, f"Productie A", 5, resources.machine, "machine")
-    else:
-        yield from processtap(env, f"Productie B", 3, resources.machine, "machine")
+# Startknop
+if st.button("🚀 Start simulatie"):
+    output = io.StringIO()
 
-    yield from processtap(env, f"Controle & Verzending", 4, resources.operator, "operator")
-    output.write(f"{env.now:.1f}: Order {id} klaar\n")
-
-def run_simulatie():
+    # SimPy-omgeving en dynamische resources
     env = simpy.Environment()
-    resources = ProcessResources(env)
+    resources = {naam: simpy.Resource(env, capacity=cap) for naam, cap in resource_config.items()}
 
+    # Procesdefinitie
+    def processtap(env, naam, duur, resource_obj):
+        with resource_obj.request() as req:
+            yield req
+            output.write(f"{env.now:.1f}: Start {naam}\n")
+            yield env.timeout(duur)
+            output.write(f"{env.now:.1f}: Einde {naam}\n")
+
+    def order_flow(env, id):
+        output.write(f"{env.now:.1f}: Order {id} binnen\n")
+        for stap in stappen_config:
+            yield from processtap(env, stap["naam"], stap["tijd"], resources[stap["resource"]])
+        output.write(f"{env.now:.1f}: Order {id} klaar\n")
+
+    # Orders inplannen
     for i in range(aantal_orders):
-        env.process(order_flow(env, resources, i))
+        env.process(order_flow(env, i))
         env.timeout(1)
 
     env.run(until=simulatietijd)
 
-if st.button("Start simulatie"):
-    output = io.StringIO()  # reset log
-    run_simulatie()
-    st.text_area("Simulatie-log", output.getvalue(), height=400)
+    # Resultaten tonen
+    st.subheader("📄 Simulatielog")
+    st.text_area("Uitvoer", output.getvalue(), height=400)
