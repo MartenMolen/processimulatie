@@ -1,88 +1,135 @@
 import streamlit as st
 import simpy
-import random
 import io
 import pandas as pd
 import plotly.express as px
+import math
 
-st.set_page_config(page_title="Processimulatie", layout="wide")
-st.title("🧪 Dynamische Processimulatie met Streamlit + SimPy")
+st.set_page_config(page_title="Processimulatie met kosten en capaciteit", layout="wide")
+st.title("🧪 Geavanceerde processimulatie")
 
-# Instellingen
-aantal_orders = st.slider("Aantal orders", min_value=1, max_value=20, value=5)
-simulatietijd = st.number_input("Totale simulatie tijd (tijdseenheden)", min_value=10, max_value=500, value=100)
-aantal_stappen = st.number_input("Aantal processtappen", min_value=1, max_value=10, value=3)
+aantal_items = st.number_input("Aantal eenheden te verwerken", min_value=1, value=10)
 
+# Resourceconfiguratie
 st.markdown("---")
-st.subheader("🔧 Configuratie van processtappen")
+st.subheader("⚙️ Resources")
 
+aantal_resources = st.number_input("Aantal verschillende resources", min_value=1, max_value=10, value=2)
+resource_info = {}
+
+for i in range(aantal_resources):
+    st.markdown(f"**Resource {i+1}**")
+    cols = st.columns(3)
+    naam = cols[0].text_input(f"Naam", key=f"res_naam_{i}", value=f"Resource_{i+1}")
+    beschikbaarheid = cols[1].number_input(f"Beschikbaarheid (tijdseenheden)", min_value=1, value=100, key=f"beschik_{i}")
+    kosten = cols[2].number_input(f"Kosten per beschikbare periode", min_value=0.0, value=50.0, key=f"kosten_{i}")
+    resource_info[naam] = {
+        "beschikbaar": beschikbaarheid,
+        "kosten": kosten
+    }
+
+# Processtappen
+st.markdown("---")
+st.subheader("📋 Processtappen")
+
+aantal_stappen = st.number_input("Aantal processtappen", min_value=1, max_value=10, value=3)
 stappen_config = []
-resource_config = {}
 
 for i in range(aantal_stappen):
     st.markdown(f"**Stap {i+1}**")
     kol1, kol2, kol3, kol4 = st.columns(4)
-    with kol1:
-        naam = st.text_input(f"Naam stap {i+1}", value=f"Stap {i+1}", key=f"naam_{i}")
-    with kol2:
-        resource = st.text_input(f"Resource", value="machine", key=f"res_{i}")
-    with kol3:
-        capaciteit = st.number_input("Capaciteit", min_value=1, value=1, key=f"cap_{i}")
-    with kol4:
-        verwerkingstijd = st.number_input("Verwerkingstijd", min_value=1, value=2, key=f"tijd_{i}")
-
+    stap_naam = kol1.text_input(f"Naam van de stap", value=f"Stap_{i+1}", key=f"stap_{i}")
+    resource = kol2.selectbox("Resource", options=list(resource_info.keys()), key=f"res_stap_{i}")
+    capaciteit = kol3.number_input("Capaciteit (hoeveel tegelijk)", min_value=1, value=1, key=f"cap_{i}")
+    verwerkingstijd = kol4.number_input("Verwerkingstijd per eenheid", min_value=1.0, value=2.0, key=f"tijd_{i}")
     stappen_config.append({
-        "naam": naam,
+        "naam": stap_naam,
         "resource": resource,
+        "capaciteit": capaciteit,
         "tijd": verwerkingstijd
     })
 
-    if resource not in resource_config:
-        resource_config[resource] = capaciteit
-
-# Startknop
+# Simulatie starten
 if st.button("🚀 Start simulatie"):
     output = io.StringIO()
     env = simpy.Environment()
-    resources = {naam: simpy.Resource(env, capacity=cap) for naam, cap in resource_config.items()}
-    resource_usage = {naam: 0 for naam in resource_config.keys()}
+    
+    # SimPy resources aanmaken
+    sim_resources = {
+        naam: simpy.Resource(env, capacity=1000)  # hoge capaciteit, capaciteit regelen we zelf
+        for naam in resource_info
+    }
+    
+    # Voor rapportage
+    stap_stats = {s["naam"]: {"verwerkingstijd": 0, "aantal": 0, "kosten": 0} for s in stappen_config}
+    resource_usage = {naam: 0 for naam in resource_info}
+    
+    def processtap(env, stap, eenheden):
+        resource = sim_resources[stap["resource"]]
+        sets = math.ceil(eenheden / stap["capaciteit"])
+        for i in range(sets):
+            with resource.request() as req:
+                yield req
+                duur = stap["tijd"]
+                output.write(f"{env.now:.1f}: Start {stap['naam']} (set {i+1})\n")
+                yield env.timeout(duur)
+                output.write(f"{env.now:.1f}: Einde {stap['naam']} (set {i+1})\n")
+                stap_stats[stap["naam"]]["verwerkingstijd"] += duur
+                stap_stats[stap["naam"]]["aantal"] += 1
+                resource_usage[stap["resource"]] += duur
 
-    def processtap(env, naam, duur, resource_obj, resource_naam):
-        with resource_obj.request() as req:
-            yield req
-            output.write(f"{env.now:.1f}: Start {naam} ({resource_naam})\n")
-            yield env.timeout(duur)
-            output.write(f"{env.now:.1f}: Einde {naam}\n")
-            resource_usage[resource_naam] += duur
-
-    def order_flow(env, id):
-        output.write(f"{env.now:.1f}: Order {id} binnen\n")
+    def item_flow(env):
         for stap in stappen_config:
-            yield from processtap(env, stap["naam"], stap["tijd"], resources[stap["resource"]], stap["resource"])
-        output.write(f"{env.now:.1f}: Order {id} klaar\n")
+            yield env.process(processtap(env, stap, aantal_items))
 
-    for i in range(aantal_orders):
-        env.process(order_flow(env, i))
-        env.timeout(1)
-
-    env.run(until=simulatietijd)
+    env.process(item_flow(env))
+    env.run()
 
     st.subheader("📄 Simulatielog")
     st.text_area("Log", output.getvalue(), height=300)
 
-    st.subheader("📊 Samenvatting per resource")
-    df = pd.DataFrame([
-        {
-            "Resource": res,
-            "Verwerkingstijd": tijd,
-            "Bezettingsgraad (%)": round((tijd / simulatietijd * capaciteit) * 100, 2)
-        }
-        for res, tijd in resource_usage.items()
-    ])
-    st.dataframe(df, use_container_width=True)
+    totale_verwerkingstijd = max(env.now for _ in range(1))
+    st.success(f"✅ Totale verwerkingstijd: {totale_verwerkingstijd:.2f} tijdseenheden")
 
-    st.subheader("📈 Bezettingsgraad per resource")
-    fig = px.bar(df, x="Resource", y="Bezettingsgraad (%)", text="Bezettingsgraad (%)", color="Resource")
-    fig.update_traces(textposition="outside")
-    fig.update_layout(yaxis_range=[0, 100])
+    # Totale kosten berekenen
+    totale_kosten = 0
+    for stap in stappen_config:
+        res = stap["resource"]
+        fractie_gebruik = resource_usage[res] / resource_info[res]["beschikbaar"]
+        kosten = fractie_gebruik * resource_info[res]["kosten"]
+        stap_stats[stap["naam"]]["kosten"] += kosten
+        totale_kosten += kosten
+
+    st.info(f"💰 Totale kosten: €{totale_kosten:.2f}")
+
+    # Overzicht per stap
+    st.subheader("📊 Overzicht per processtap")
+    df_stap = pd.DataFrame([
+        {
+            "Stap": naam,
+            "Aantal keer uitgevoerd": data["aantal"],
+            "Totale verwerkingstijd": data["verwerkingstijd"],
+            "Kosten (€)": round(data["kosten"], 2)
+        }
+        for naam, data in stap_stats.items()
+    ])
+    st.dataframe(df_stap, use_container_width=True)
+
+    # Overzicht per resource
+    st.subheader("📊 Overzicht per resource")
+    df_res = pd.DataFrame([
+        {
+            "Resource": naam,
+            "Totale verwerkingstijd": tijd,
+            "Beschikbaarheid": resource_info[naam]["beschikbaar"],
+            "Bezettingsgraad (%)": round((tijd / resource_info[naam]["beschikbaar"]) * 100, 2),
+            "Kosten (€)": round((tijd / resource_info[naam]["beschikbaar"]) * resource_info[naam]["kosten"], 2)
+        }
+        for naam, tijd in resource_usage.items()
+    ])
+    st.dataframe(df_res, use_container_width=True)
+
+    # Optionele visualisatie
+    st.subheader("📈 Verwerkingstijd per resource")
+    fig = px.bar(df_res, x="Resource", y="Totale verwerkingstijd", text="Totale verwerkingstijd", color="Resource")
     st.plotly_chart(fig, use_container_width=True)
