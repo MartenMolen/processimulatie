@@ -75,21 +75,33 @@ if st.button("🚀 Start simulatie"):
 
     def processtap(env, stap, eenheden):
         resource = sim_resources[stap["resource"]]
+        beschikbaarheid = resource_info[stap["resource"]]["beschikbaar"]
+        tijdsgebruik = 0
         sets = math.ceil(eenheden / stap["capaciteit"])
+        succesvol_verwerkt = 0
+
         for i in range(sets):
+            duur = stap["tijd"]
+            if resource_usage[stap["resource"]] + duur > beschikbaarheid:
+                output.write(f"{seconds_to_hms_str(env.now)}: ⛔ Resource {stap['resource']} heeft onvoldoende capaciteit voor {stap['naam']} (set {i+1})\n")
+                continue
             with resource.request() as req:
                 yield req
-                duur = stap["tijd"]
                 output.write(f"{seconds_to_hms_str(env.now)}: Start {stap['naam']} (set {i+1})\n")
                 yield env.timeout(duur)
                 output.write(f"{seconds_to_hms_str(env.now)}: Einde {stap['naam']} (set {i+1})\n")
                 stap_stats[stap["naam"]]["verwerkingstijd"] += duur
                 stap_stats[stap["naam"]]["aantal"] += 1
                 resource_usage[stap["resource"]] += duur
+                succesvol_verwerkt += stap["capaciteit"]
+
+        return succesvol_verwerkt
 
     def item_flow(env):
+        resterend = aantal_items
         for stap in stappen_config:
-            yield env.process(processtap(env, stap, aantal_items))
+            verwerkt = yield env.process(processtap(env, stap, resterend))
+            resterend = min(verwerkt, resterend)
 
     env.process(item_flow(env))
     env.run()
@@ -104,9 +116,10 @@ if st.button("🚀 Start simulatie"):
     for stap_naam, data in stap_stats.items():
         res = data["resource"]
         tijd = data["verwerkingstijd"]
-        stap_kosten = (tijd / resource_info[res]["beschikbaar"]) * resource_info[res]["kosten"]
-        data["kosten"] = stap_kosten
-        totale_kosten += stap_kosten
+        aandeel = tijd / resource_usage[res] if resource_usage[res] > 0 else 0
+        res_kosten = (resource_info[res]["kosten"] / resource_info[res]["beschikbaar"]) * tijd if resource_info[res]["beschikbaar"] > 0 else 0
+        data["kosten"] = res_kosten
+        totale_kosten += res_kosten
 
     st.info(f"💰 Totale kosten: €{totale_kosten:.2f}")
 
@@ -128,8 +141,8 @@ if st.button("🚀 Start simulatie"):
             "Resource": naam,
             "Totale verwerkingstijd": seconds_to_hms_str(tijd),
             "Beschikbaarheid": seconds_to_hms_str(resource_info[naam]["beschikbaar"]),
-            "Bezettingsgraad (%)": round((tijd / resource_info[naam]["beschikbaar"]) * 100, 2),
-            "Kosten (€)": round((tijd / resource_info[naam]["beschikbaar"]) * resource_info[naam]["kosten"], 2)
+            "Bezettingsgraad (%)": round((tijd / resource_info[naam]["beschikbaar"]) * 100, 2) if resource_info[naam]["beschikbaar"] > 0 else 0,
+            "Kosten (€)": round((tijd / resource_info[naam]["beschikbaar"]) * resource_info[naam]["kosten"], 2) if resource_info[naam]["beschikbaar"] > 0 else 0
         }
         for naam, tijd in resource_usage.items()
     ])
