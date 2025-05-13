@@ -102,7 +102,6 @@ if st.button("🚀 Start simulatie"):
         return result
 
     def item_flow(env):
-        batch = 1
         stap_buffers = [aantal_items] + [0] * (len(stappen_config) - 1)
 
         while any(stap_buffers):
@@ -110,8 +109,9 @@ if st.button("🚀 Start simulatie"):
                 if stap_buffers[i] <= 0:
                     continue
                 items = stap_buffers[i]
-                proces = env.process(processtap(env, stap, items))
-                verwerkt = yield proces
+                verwerkt_event = env.process(processtap(env, stap, items))
+                yield verwerkt_event
+                verwerkt = verwerkt_event.value
                 stap_buffers[i] -= verwerkt
                 if i + 1 < len(stap_buffers):
                     stap_buffers[i+1] += verwerkt
