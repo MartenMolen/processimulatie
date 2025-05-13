@@ -97,9 +97,7 @@ if st.button("🚀 Start simulatie"):
                 stap_stats[stap["naam"]]["eenheden"] += items_in_set
                 succesvol_verwerkt += items_in_set
 
-        result = env.event()
-        result.succeed(succesvol_verwerkt)
-        return result
+        return succesvol_verwerkt
 
     def item_flow(env):
         stap_buffers = [aantal_items] + [0] * (len(stappen_config) - 1)
@@ -109,9 +107,7 @@ if st.button("🚀 Start simulatie"):
                 if stap_buffers[i] <= 0:
                     continue
                 items = stap_buffers[i]
-                verwerkt_event = env.process(processtap(env, stap, items))
-                yield verwerkt_event
-                verwerkt = verwerkt_event.value
+                verwerkt = yield env.process(processtap(env, stap, items))
                 stap_buffers[i] -= verwerkt
                 if i + 1 < len(stap_buffers):
                     stap_buffers[i+1] += verwerkt
@@ -135,7 +131,7 @@ if st.button("🚀 Start simulatie"):
 
     st.info(f"💰 Totale kosten: €{totale_kosten:.2f}")
 
-    st.subheader("📊 Overzicht per processtap")
+    st.subheader("📈 Overzicht per processtap")
     df_stap = pd.DataFrame([
         {
             "Stap": naam,
@@ -148,7 +144,7 @@ if st.button("🚀 Start simulatie"):
     ])
     st.dataframe(df_stap, use_container_width=True)
 
-    st.subheader("📊 Overzicht per resource")
+    st.subheader("📈 Overzicht per resource")
     df_res = pd.DataFrame([
         {
             "Resource": naam,
